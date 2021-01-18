@@ -1,4 +1,4 @@
-package swapbot
+package main
 
 import (
     "context"
@@ -7,17 +7,18 @@ import (
 	"google.golang.org/grpc"
 
     sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/tx"
+	//"github.com/cosmos/cosmos-sdk/types/tx"
+    banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
 func queryState() error {
-    myAddress, err := sdk.AccAddressFromBech32("cosmos1z36q8ddla8zmjyaxmdwpzlj3srwe45d8pzc2ug")
+    myAddress, err := sdk.AccAddressFromBech32("cosmos1hdkmddemx6ttqdugxh2aqy6qjsw6lwu40pvmdv")
     if err != nil {
         return err
     }
 
     // Create a connection to the gRPC server.
-    grpcConn := grpc.Dial(
+    grpcConn, err := grpc.Dial(
         "127.0.0.1:9090", // your gRPC server address.
         grpc.WithInsecure(), // The SDK doesn't support any transport security mechanism.
     )
@@ -27,7 +28,7 @@ func queryState() error {
     bankClient := banktypes.NewQueryClient(grpcConn)
     bankRes, err := bankClient.Balance(
         context.Background(),
-        &banktypes.QueryBalanceRequest{Address: myAddress, Denom: "atom"},
+        &banktypes.QueryBalanceRequest{Address: myAddress.String(), Denom: "stake"},
     )
     if err != nil {
         return err
@@ -36,4 +37,8 @@ func queryState() error {
     fmt.Println(bankRes.GetBalance()) // Prints the account balance
 
     return nil
+}
+
+func main() {
+    queryState()
 }
