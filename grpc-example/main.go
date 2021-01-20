@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"google.golang.org/grpc"
-
+	//codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+
 	//"github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -19,31 +21,32 @@ import (
 
 //https://github.com/cosmos/cosmos-sdk/blob/master/docs/run-node/txs.md
 //https://github.com/p2p-org/relayerGun/blob/gun/relayer/chain.go
-
+//https://github.com/cosmos/cosmos-sdk/issues/8045
 func queryState() error {
-	myAddress, err := sdk.AccAddressFromBech32("cosmos1z36q8ddla8zmjyaxmdwpzlj3srwe45d8pzc2ug")
+	myAddress, err := sdk.AccAddressFromBech32("cosmos1wlfjwg3ff8fy7qhut3eaj4agm8qpnw5ug7qjen")
 	if err != nil {
 		return err
 	}
 
 	// Create a connection to the gRPC server.
 	grpcConn, err := grpc.Dial(
-		"127.0.0.1:9090",    // your gRPC server address.
-		grpc.WithInsecure(), // The SDK doesn't support any transport security mechanism.
+		"127.0.0.1:9090", // your gRPC server address.
+		grpc.WithInsecure(),
+		grpc.WithBlock(), // The SDK doesn't support any transport security mechanism.
 	)
 	defer grpcConn.Close()
 
 	// This creates a gRPC client to query the x/bank service.
 	bankClient := banktypes.NewQueryClient(grpcConn)
-	bankRes, err := bankClient.Balance(
+	bankRes, err := bankClient.AllBalances(
 		context.Background(),
-		&banktypes.QueryBalanceRequest{Address: myAddress.String(), Denom: "uatom"},
+		&banktypes.QueryAllBalancesRequest{Address: myAddress.String()},
 	)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println(bankRes.GetBalance()) // Prints the account balance
+	fmt.Println(bankRes.GetBalances()) // Prints the account balance
 
 	// This creates a gRPC client to query the x/bank service.
 	authClient := authtypes.NewQueryClient(grpcConn)
@@ -54,8 +57,10 @@ func queryState() error {
 	if err != nil {
 		return err
 	}
+	var acc authtypes.BaseAccount
+	proto.Unmarshal(authRes.Account.GetValue(), &acc)
 
-	fmt.Println(authRes.GetAccount()) // Prints the account balance
+	fmt.Println(string(authRes.Account.Value))
 
 	return nil
 }
