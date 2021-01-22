@@ -68,12 +68,24 @@ func queryState() error {
 
 	return nil
 }
+func sendtx(grpcConn *grpc.ClientConn, txBytes []byte) {
+	txClient := tx.NewServiceClient(grpcConn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	txClient.BroadcastTx(
+		ctx,
+		&tx.BroadcastTxRequest{
+			Mode:    tx.BroadcastMode_BROADCAST_MODE_ASYNC,
+			TxBytes: txBytes, // Proto-binary of the signed transaction, see previous step.
+		},
+		//grpc.WaitForReady(false), grpc.FailFast(false),
+	)
+}
 
 func banksend() error {
 	grpcConn, err := grpc.Dial(
-		"127.0.0.1:9090", // your gRPC server address.
-		grpc.WithInsecure(),
-		grpc.WithBlock(), // The SDK doesn't support any transport security mechanism.
+		"127.0.0.1:9090",    // your gRPC server address.
+		grpc.WithInsecure(), // The SDK doesn't support any transport security mechanism.
 	)
 
 	//ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
@@ -81,6 +93,10 @@ func banksend() error {
 	defer grpcConn.Close()
 	//defer cancel()
 	keyring, err := keys.New("swapchain", "os", "/root/.liquidityd/", nil)
+	keylist, _ := keyring.List()
+	for _, key := range keylist {
+		println(key.GetAddress().String())
+	}
 
 	account1, err := keyring.Key("user1") //paswd
 	account2, err := keyring.Key("validator")
@@ -100,8 +116,10 @@ func banksend() error {
 	txBuilder := encCfg.TxConfig.NewTxBuilder()
 	msg1 := banktypes.NewMsgSend(addr1, addr2, types.NewCoins(types.NewInt64Coin("uatom", 1000000)))
 	msg2 := banktypes.NewMsgSend(addr2, addr1, types.NewCoins(types.NewInt64Coin("uusdt", 1000000)))
-
-	err = txBuilder.SetMsgs(msg1, msg2)
+	var msgs []sdk.Msg
+	msgs = append(msgs, msg1)
+	msgs = append(msgs, msg2)
+	err = txBuilder.SetMsgs(msgs...)
 	if err != nil {
 		return err
 	}
@@ -142,15 +160,11 @@ func banksend() error {
 	accNums := []uint64{acc1.AccountNumber, acc2.AccountNumber} // The accounts' account numbers
 	accSeqs := []uint64{acc1.Sequence, acc2.Sequence}           // The accounts' sequence numbers
 	startTime := time.Now()
-	count := 0
+	var txBytess [][]byte
+	for q := 0; q < 10; q++ {
+		// Broadcast the tx via gRPC. We create a new client for the Protobuf Tx
+		// service.
 
-	// Broadcast the tx via gRPC. We create a new client for the Protobuf Tx
-	// service.
-	txClient := tx.NewServiceClient(grpcConn)
-	for q := 0; q < 200; q++ {
-		count = count + 1
-		println(accSeqs[0], accSeqs[1])
-		println(count)
 		// First round: we gather all the signer infos. We use the "set empty
 		// signature" hack to do that.
 		var sigsV2 []signing.SignatureV2
@@ -163,7 +177,6 @@ func banksend() error {
 				},
 				Sequence: accSeqs[i],
 			}
-
 			sigsV2 = append(sigsV2, sigV2)
 		}
 
@@ -197,21 +210,15 @@ func banksend() error {
 		if err != nil {
 			return err
 		}
+		txBytess = append(txBytess, txBytes)
+		//sendtx(grpcConn, txBytes)
 
-		// We then call the BroadcastTx method on this client.
-		grpcRes, err := txClient.BroadcastTx(
-			context.Background(),
-			&tx.BroadcastTxRequest{
-				Mode:    tx.BroadcastMode_BROADCAST_MODE_ASYNC,
-				TxBytes: txBytes, // Proto-binary of the signed transaction, see previous step.
-			},
-		)
-		if err != nil {
-			return err
-		}
-
-		fmt.Println(grpcRes.TxResponse.Code) // Should be `0` if the tx is successful
-
+	}
+	var count int = 1
+	for _, txByte := range txBytess {
+		sendtx(grpcConn, txByte)
+		println(count)
+		count = count + 1
 	}
 	elapsedTime := time.Since(startTime)
 
