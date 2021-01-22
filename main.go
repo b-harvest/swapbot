@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
@@ -135,10 +136,49 @@ func grpcclient() {
 	}
 }
 
+func orderPirce() string {
+	if grpcConn == nil {
+		grpcclient()
+	}
+	var pool swaptypes.LiquidityPoolMetadata
+	liquClient := swaptypes.NewQueryClient(grpcConn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	PoolRes, err := liquClient.LiquidityPool(
+		ctx,
+		&swaptypes.QueryLiquidityPoolRequest{PoolId: 10},
+	)
+	if err != nil {
+		println(err)
+	}
+	pool = PoolRes.GetLiquidityPoolMetadata()
+	reservecoins := pool.ReserveCoins
+	tokenAreserveamount := reservecoins.AmountOf("uatom").Int64()
+	println(tokenAreserveamount)
+
+	tokenBreserveamount := reservecoins.AmountOf("uusdt").Int64()
+	println(tokenBreserveamount)
+
+	inputAmount := sdk.NewInt(1000000).Int64()
+	println(inputAmount)
+	swapPrice := float64((tokenAreserveamount + 2*inputAmount)) / float64(tokenBreserveamount)
+	pricetostring := strconv.FormatFloat(swapPrice, 'f', 18, 64)
+	println("swapPrice:", pricetostring)
+	return pricetostring
+
+}
+
 func main() {
-	var txnum int = 500
+
+	var txnum int = 100
 	var msgnum int = 1
-	var round int = 10
+	var round int = 10000
+
+	if grpcConn == nil {
+		grpcclient()
+	}
+
+	defer grpcConn.Close()
 
 	keyring, err := keys.New("swapchain", "os", "/root/.liquidityd/", nil)
 	if err != nil {
@@ -161,7 +201,7 @@ func main() {
 			println(err)
 		}
 		swapcoin := types.NewInt64Coin("uatom", 1000000)
-		orderpirce, _ := types.NewDecFromStr("0.148648648648648657")
+		orderpirce, _ := types.NewDecFromStr(orderPirce())
 		msg := swaptypes.NewMsgSwap(key.GetAddress(), 10, 1, swapcoin, "uusdt", orderpirce)
 		go signtxsend(round, txnum, msgnum, msg, accountpriv, key.GetAddress(), wait)
 
