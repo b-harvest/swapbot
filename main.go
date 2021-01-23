@@ -40,8 +40,8 @@ func signtxsend(round int, txnum int, msgnum int, priv cryptotypes.PrivKey, addr
 		if err != nil {
 			println(err)
 		}
-		txBuilder.SetGasLimit(1500000000000)
-		txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin("uatom", sdk.NewInt(150))))
+		txBuilder.SetGasLimit(8999999999999999999)
+		txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin("uatom", sdk.NewInt(0))))
 		for k := 0; k < txnum; k++ {
 			sigV2 := signing.SignatureV2{
 				PubKey: priv.PubKey(),
@@ -137,7 +137,7 @@ func msgcreationbot(msgnum int, address sdk.AccAddress, tokenA string, tokenB st
 
 	for j := 0; j < msgnum; j++ {
 		var orderpirceX sdk.Dec
-		randtodec := sdk.NewDec(int64(rand.Intn(30)))
+		randtodec := sdk.NewDec(int64(rand.Intn(2)))
 		pricepercentvalue := orderpirce.Mul(randtodec.Quo(sdk.NewDec(100)))
 		if j%2 == 0 {
 			orderpirceX = orderpirce.Add(pricepercentvalue)
@@ -185,10 +185,10 @@ func orderPirce(tokenA string, tokenB string) sdk.Dec {
 
 func main() {
 
-	var txnum int = 1000   // 총 tx = txnum * 계정수
-	var msgnum int = 2     //1tx 당 msg수
+	var txnum int = 1      // 총 tx = txnum * 계정수
+	var msgnum int = 2500  //1tx 당 msg수 /
 	var round int = 100000 // 총실행횟수= txnum * round
-	var swapamount int64 = 100000
+	var swapamount int64 = 1000
 	var tokenA string = "uatom"
 	var tokenB string = "uusdt"
 
