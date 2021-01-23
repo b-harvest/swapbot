@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -25,23 +25,22 @@ import (
 
 var grpcConn *grpc.ClientConn
 
-func signtxsend(round int, txnum int, msgnum int, msg *swaptypes.MsgSwap, priv cryptotypes.PrivKey, address sdk.AccAddress, w *sync.WaitGroup) {
+func signtxsend(round int, txnum int, msgnum int, priv cryptotypes.PrivKey, address sdk.AccAddress, w *sync.WaitGroup, tokenA string, tokenB string, swapamount int64) {
 	defer w.Done()
 	for i := 0; i < round; i++ {
 		startTime := time.Now()
 		var txBytes [][]byte
-		var msgs []sdk.Msg
+
 		accSeq, accNum := accountinfo(address)
-		for j := 0; j < msgnum; j++ {
-			msgs = append(msgs, msg)
-		}
+
+		msgs := msgcreationbot(msgnum, address, tokenA, tokenB, swapamount)
 		encCfg := simapp.MakeTestEncodingConfig()
 		txBuilder := encCfg.TxConfig.NewTxBuilder()
 		err := txBuilder.SetMsgs(msgs...)
 		if err != nil {
 			println(err)
 		}
-		txBuilder.SetGasLimit(150000)
+		txBuilder.SetGasLimit(1500000000000)
 		txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin("uatom", sdk.NewInt(150))))
 		for k := 0; k < txnum; k++ {
 			sigV2 := signing.SignatureV2{
@@ -128,6 +127,30 @@ func accountinfo(addr sdk.AccAddress) (uint64, uint64) {
 	return acc.Sequence, acc.AccountNumber
 }
 
+func msgcreationbot(msgnum int, address sdk.AccAddress, tokenA string, tokenB string, swapamount int64) []sdk.Msg {
+
+	var msgs []sdk.Msg
+	var orderpirce sdk.Dec
+
+	swapcoin := types.NewInt64Coin(tokenA, swapamount)
+	orderpirce = orderPirce(tokenA, tokenB)
+
+	for j := 0; j < msgnum; j++ {
+		var orderpirceX sdk.Dec
+		randtodec := sdk.NewDec(int64(rand.Intn(30)))
+		pricepercentvalue := orderpirce.Mul(randtodec.Quo(sdk.NewDec(100)))
+		if j%2 == 0 {
+			orderpirceX = orderpirce.Add(pricepercentvalue)
+		} else {
+			orderpirceX = orderpirce.Sub(pricepercentvalue)
+		}
+		msg := swaptypes.NewMsgSwap(address, 10, 1, swapcoin, tokenB, orderpirceX)
+		msgs = append(msgs, msg)
+		//println(orderpirceX.String())
+	}
+	return msgs
+}
+
 func grpcclient() {
 	connV, err := grpc.Dial("localhost:9090", grpc.WithInsecure(), grpc.WithBlock())
 	grpcConn = connV
@@ -136,7 +159,7 @@ func grpcclient() {
 	}
 }
 
-func orderPirce() string {
+func orderPirce(tokenA string, tokenB string) sdk.Dec {
 	if grpcConn == nil {
 		grpcclient()
 	}
@@ -153,26 +176,21 @@ func orderPirce() string {
 	}
 	pool = PoolRes.GetLiquidityPoolMetadata()
 	reservecoins := pool.ReserveCoins
-	tokenAreserveamount := reservecoins.AmountOf("uatom").Int64()
-	println(tokenAreserveamount)
 
-	tokenBreserveamount := reservecoins.AmountOf("uusdt").Int64()
-	println(tokenBreserveamount)
+	swapPrice := reservecoins.AmountOf(tokenA).ToDec().Quo(reservecoins.AmountOf(tokenB).ToDec())
 
-	inputAmount := sdk.NewInt(1000000).Int64()
-	println(inputAmount)
-	swapPrice := float64((tokenAreserveamount + 2*inputAmount)) / float64(tokenBreserveamount)
-	pricetostring := strconv.FormatFloat(swapPrice, 'f', 18, 64)
-	println("swapPrice:", pricetostring)
-	return pricetostring
-
+	//println("swapPrice:", swapPrice.String())
+	return swapPrice
 }
 
 func main() {
 
-	var txnum int = 100
-	var msgnum int = 1
-	var round int = 10000
+	var txnum int = 1000   // 총 tx = txnum * 계정수
+	var msgnum int = 2     //1tx 당 msg수
+	var round int = 100000 // 총실행횟수= txnum * round
+	var swapamount int64 = 100000
+	var tokenA string = "uatom"
+	var tokenB string = "uusdt"
 
 	if grpcConn == nil {
 		grpcclient()
@@ -190,7 +208,7 @@ func main() {
 	wait := new(sync.WaitGroup)
 	wait.Add(len(keylist))
 
-	for _, key := range keylist {
+	for i, key := range keylist {
 
 		accountarmor, err := keyring.ExportPrivKeyArmor(key.GetName(), "qwer1234")
 		if err != nil {
@@ -200,11 +218,11 @@ func main() {
 		if err != nil {
 			println(err)
 		}
-		swapcoin := types.NewInt64Coin("uatom", 1000000)
-		orderpirce, _ := types.NewDecFromStr(orderPirce())
-		msg := swaptypes.NewMsgSwap(key.GetAddress(), 10, 1, swapcoin, "uusdt", orderpirce)
-		go signtxsend(round, txnum, msgnum, msg, accountpriv, key.GetAddress(), wait)
-
+		if i%2 == 0 {
+			go signtxsend(round, txnum, msgnum, accountpriv, key.GetAddress(), wait, tokenA, tokenB, swapamount)
+		} else {
+			go signtxsend(round, txnum, msgnum, accountpriv, key.GetAddress(), wait, tokenB, tokenA, swapamount)
+		}
 	}
 
 	wait.Wait()
