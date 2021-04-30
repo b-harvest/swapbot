@@ -180,8 +180,8 @@ func orderPirce(tokenA string, tokenB string) sdk.Dec {
 	reserveCoins := sdk.NewCoins()
 	bankClient := banktypes.NewQueryClient(grpcConn)
 	for _, denom := range pool.ReserveCoinDenoms {
-		res, err := bankClient.Balance(ctx, banktypes.NewQueryBalanceRequest(sdk.AccAddress(pool.ReserveAccountAddress), denom))
-		if err != nil && res.Balance.IsValid() {
+		res, err := bankClient.Balance(ctx, banktypes.NewQueryBalanceRequest(pool.GetReserveAccount(), denom))
+		if err == nil && res.Balance.IsValid() {
 			reserveCoins = reserveCoins.Add(*res.Balance)
 		} else {
 			fmt.Println(err)
