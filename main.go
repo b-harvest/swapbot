@@ -144,7 +144,7 @@ func msgcreationbot(msgnum int, address sdk.AccAddress, tokenA string, tokenB st
 		} else {
 			orderpirceX = orderpirce.Sub(pricepercentvalue)
 		}
-		msg := swaptypes.NewMsgSwap(address, 10, 1, swapcoin, tokenB, orderpirceX)
+		msg := swaptypes.NewMsgSwapWithinBatch(address, uint64(10), uint32(1), swapcoin, tokenB, orderpirceX, sdk.NewDecWithPrec(3, 3))
 		msgs = append(msgs, msg)
 		//println(orderpirceX.String())
 	}
@@ -152,7 +152,7 @@ func msgcreationbot(msgnum int, address sdk.AccAddress, tokenA string, tokenB st
 }
 
 func grpcclient() {
-	connV, err := grpc.Dial("localhost:9090", grpc.WithInsecure(), grpc.WithBlock())
+	connV, err := grpc.Dial("competition.bharvest.io:9090", grpc.WithInsecure(), grpc.WithBlock())
 	grpcConn = connV
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
@@ -163,34 +163,36 @@ func orderPirce(tokenA string, tokenB string) sdk.Dec {
 	if grpcConn == nil {
 		grpcclient()
 	}
-	var pool swaptypes.LiquidityPoolMetadata
-	liquClient := swaptypes.NewQueryClient(grpcConn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	PoolRes, err := liquClient.LiquidityPool(
-		ctx,
-		&swaptypes.QueryLiquidityPoolRequest{PoolId: 10},
-	)
-	if err != nil {
-		println(err)
-	}
-	pool = PoolRes.GetLiquidityPoolMetadata()
-	reservecoins := pool.ReserveCoins
+	//var pool swaptypes.Pool
+	//liquClient := swaptypes.NewQueryClient(grpcConn)
+	//ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	//defer cancel()
+	//PoolRes, err := liquClient.LiquidityPool(
+	//	ctx,
+	//	&swaptypes.QueryLiquidityPoolRequest{PoolId: 10},
+	//)
+	//if err != nil {
+	//	println(err)
+	//}
+	//pool = PoolRes.GetPool()
+	//reservecoins := pool.ReserveCoinDenoms
 
-	swapPrice := reservecoins.AmountOf(tokenA).ToDec().Quo(reservecoins.AmountOf(tokenB).ToDec())
-
-	//println("swapPrice:", swapPrice.String())
+	//swapPrice := reservecoins.AmountOf(tokenA).ToDec().Quo(reservecoins.AmountOf(tokenB).ToDec())
+	var intprice int
+	intprice = 10
+	swapPrice := sdk.NewDec(int64(intprice))
+	println("swapPrice:", swapPrice.String())
 	return swapPrice
 }
 
 func main() {
 
-	var txnum int = 1      // 총 tx = txnum * 계정수
-	var msgnum int = 2500  //1tx 당 msg수 /
-	var round int = 100000 // 총실행횟수= txnum * round
+	var txnum int = 100 // 총 tx = txnum * 계정수
+	var msgnum int = 1  //1tx 당 msg수 /
+	var round int = 2   // 총실행횟수= txnum * round
 	var swapamount int64 = 1000
 	var tokenA string = "uatom"
-	var tokenB string = "uusdt"
+	var tokenB string = "udvpn"
 
 	if grpcConn == nil {
 		grpcclient()
@@ -198,7 +200,7 @@ func main() {
 
 	defer grpcConn.Close()
 
-	keyring, err := keys.New("swapchain", "os", "/root/.liquidityd/", nil)
+	keyring, err := keys.New("swapchain", "os", "/home/ubuntu/.liquidityapp/", nil)
 	if err != nil {
 		log.Fatalf("did not keyring: %v", err)
 	}
