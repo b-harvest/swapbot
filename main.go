@@ -180,8 +180,12 @@ func orderPirce(tokenA string, tokenB string) sdk.Dec {
 	reserveCoins := sdk.NewCoins()
 	bankClient := banktypes.NewQueryClient(grpcConn)
 	for _, denom := range pool.ReserveCoinDenoms {
-		res, _ := bankClient.Balance(ctx, banktypes.NewQueryBalanceRequest(sdk.AccAddress(pool.ReserveAccountAddress), denom))
-		reserveCoins = reserveCoins.Add(*res.Balance)
+		res, err := bankClient.Balance(ctx, banktypes.NewQueryBalanceRequest(sdk.AccAddress(pool.ReserveAccountAddress), denom))
+		if err != nil && res.Balance.IsValid() {
+			reserveCoins = reserveCoins.Add(*res.Balance)
+		} else {
+			fmt.Println(err)
+		}
 	}
 
 	swapPrice := reserveCoins.AmountOf(tokenA).ToDec().Quo(reserveCoins.AmountOf(tokenB).ToDec())
