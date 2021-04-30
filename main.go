@@ -19,6 +19,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	xauthsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	swaptypes "github.com/tendermint/liquidity/x/liquidity/types"
 	"google.golang.org/grpc"
 )
@@ -59,7 +60,7 @@ func signtxsend(round int, txnum int, msgnum int, priv cryptotypes.PrivKey, addr
 
 			// Second round: all signer infos are set, so each signer can sign.
 			signerData := xauthsigning.SignerData{
-				ChainID:       "swap-testnet-2001",
+				ChainID:       "swap-testnet-2004",
 				AccountNumber: accNum,
 				Sequence:      accSeq,
 			}
@@ -144,7 +145,7 @@ func msgcreationbot(msgnum int, address sdk.AccAddress, tokenA string, tokenB st
 		} else {
 			orderpirceX = orderpirce.Sub(pricepercentvalue)
 		}
-		msg := swaptypes.NewMsgSwapWithinBatch(address, uint64(10), uint32(1), swapcoin, tokenB, orderpirceX, sdk.NewDecWithPrec(3, 3))
+		msg := swaptypes.NewMsgSwapWithinBatch(address, uint64(1), uint32(1), swapcoin, tokenB, orderpirceX, sdk.NewDecWithPrec(3, 3))
 		msgs = append(msgs, msg)
 		//println(orderpirceX.String())
 	}
@@ -163,24 +164,28 @@ func orderPirce(tokenA string, tokenB string) sdk.Dec {
 	if grpcConn == nil {
 		grpcclient()
 	}
-	//var pool swaptypes.Pool
-	//liquClient := swaptypes.NewQueryClient(grpcConn)
-	//ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	//defer cancel()
-	//PoolRes, err := liquClient.LiquidityPool(
-	//	ctx,
-	//	&swaptypes.QueryLiquidityPoolRequest{PoolId: 10},
-	//)
-	//if err != nil {
-	//	println(err)
-	//}
-	//pool = PoolRes.GetPool()
-	//reservecoins := pool.ReserveCoinDenoms
+	var pool swaptypes.Pool
+	liquClient := swaptypes.NewQueryClient(grpcConn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	PoolRes, err := liquClient.LiquidityPool(
+		ctx,
+		&swaptypes.QueryLiquidityPoolRequest{PoolId: 1},
+	)
+	if err != nil {
+		println(err)
+	}
+	pool = PoolRes.GetPool()
 
-	//swapPrice := reservecoins.AmountOf(tokenA).ToDec().Quo(reservecoins.AmountOf(tokenB).ToDec())
-	var intprice int
-	intprice = 10
-	swapPrice := sdk.NewDec(int64(intprice))
+	reserveCoins := sdk.NewCoins()
+	bankClient := banktypes.NewQueryClient(grpcConn)
+	for _, denom := range pool.ReserveCoinDenoms {
+		res, _ := bankClient.Balance(ctx, banktypes.NewQueryBalanceRequest(sdk.AccAddress(pool.ReserveAccountAddress), denom))
+		reserveCoins = reserveCoins.Add(*res.Balance)
+	}
+
+	swapPrice := reserveCoins.AmountOf(tokenA).ToDec().Quo(reserveCoins.AmountOf(tokenB).ToDec())
+
 	println("swapPrice:", swapPrice.String())
 	return swapPrice
 }
@@ -192,7 +197,7 @@ func main() {
 	var round int = 2   // 총실행횟수= txnum * round
 	var swapamount int64 = 1000
 	var tokenA string = "uatom"
-	var tokenB string = "udvpn"
+	var tokenB string = "uiris"
 
 	if grpcConn == nil {
 		grpcclient()
