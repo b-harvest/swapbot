@@ -20,11 +20,20 @@ import (
 	xauthsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	ibctypes "github.com/cosmos/cosmos-sdk/x/ibc/applications/transfer/types"
+	clienttypes "github.com/cosmos/cosmos-sdk/x/ibc/core/02-client/types"
+	channelutils "github.com/cosmos/cosmos-sdk/x/ibc/core/04-channel/client/utils"
 	swaptypes "github.com/tendermint/liquidity/x/liquidity/types"
 	"google.golang.org/grpc"
 )
 
 var grpcConn *grpc.ClientConn
+
+const (
+	flagPacketTimeoutHeight    = "packet-timeout-height"
+	flagPacketTimeoutTimestamp = "packet-timeout-timestamp"
+	flagAbsoluteTimeouts       = "absolute-timeouts"
+)
 
 func signtxsend(round int, txnum int, msgnum int, priv cryptotypes.PrivKey, address sdk.AccAddress, w *sync.WaitGroup, tokenA string, tokenB string, swapamount int64) {
 	defer w.Done()
@@ -129,6 +138,21 @@ func accountinfo(addr sdk.AccAddress) (uint64, uint64) {
 }
 
 func msgcreationbot(msgnum int, address sdk.AccAddress, tokenA string, tokenB string, swapamount int64) []sdk.Msg {
+	consensusState, height, _, err := channelutils.QueryLatestConsensusState(clientCtx, srcPort, srcChannel)
+	if err != nil {
+
+		
+	}
+
+	var timeoutHeight clienttypes.Height
+	var timeoutTimestamp uint64
+
+	absoluteHeight := height
+	absoluteHeight.RevisionNumber += timeoutHeight.RevisionNumber
+	absoluteHeight.RevisionHeight += timeoutHeight.RevisionHeight
+	timeoutHeight = absoluteHeight
+
+	timeoutTimestamp = consensusState.GetTimestamp() + timeoutTimestamp
 
 	var msgs []sdk.Msg
 	var orderpirce sdk.Dec
@@ -145,6 +169,7 @@ func msgcreationbot(msgnum int, address sdk.AccAddress, tokenA string, tokenB st
 		} else {
 			orderpirceX = orderpirce.Sub(pricepercentvalue)
 		}
+		ibcmsg := ibctypes.NewMsgTransfer()
 		msg := swaptypes.NewMsgSwapWithinBatch(address, uint64(1), uint32(1), swapcoin, tokenB, orderpirceX, sdk.NewDecWithPrec(3, 3))
 		msgs = append(msgs, msg)
 		//println(orderpirceX.String())
