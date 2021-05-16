@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -13,17 +12,14 @@ import (
 	keys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/simapp"
-	"github.com/cosmos/cosmos-sdk/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	xauthsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	ibctypes "github.com/cosmos/cosmos-sdk/x/ibc/applications/transfer/types"
 	clienttypes "github.com/cosmos/cosmos-sdk/x/ibc/core/02-client/types"
 	channelutils "github.com/cosmos/cosmos-sdk/x/ibc/core/04-channel/client/utils"
-	swaptypes "github.com/tendermint/liquidity/x/liquidity/types"
 	"google.golang.org/grpc"
 )
 
@@ -35,15 +31,15 @@ const (
 	flagAbsoluteTimeouts       = "absolute-timeouts"
 )
 
-func signtxsend(round int, txnum int, msgnum int, priv cryptotypes.PrivKey, address sdk.AccAddress, w *sync.WaitGroup, tokenA string, tokenB string, swapamount int64) {
+func signtxsend(round int, txnum int, msgnum int, priv cryptotypes.PrivKey, w *sync.WaitGroup, srcPort string, srcChannel string, coin sdk.Coin, sender sdk.AccAddress, receiver string) {
 	defer w.Done()
 	for i := 0; i < round; i++ {
 		startTime := time.Now()
 		var txBytes [][]byte
 
-		accSeq, accNum := accountinfo(address)
+		accSeq, accNum := accountinfo(sender)
 
-		msgs := msgcreationbot(msgnum, address, tokenA, tokenB, swapamount)
+		msgs := msgcreationbot(msgnum, srcPort, srcChannel, coin, sender, receiver)
 		encCfg := simapp.MakeTestEncodingConfig()
 		txBuilder := encCfg.TxConfig.NewTxBuilder()
 		err := txBuilder.SetMsgs(msgs...)
@@ -95,7 +91,8 @@ func signtxsend(round int, txnum int, msgnum int, priv cryptotypes.PrivKey, addr
 			sendtx(txByte)
 		}
 		fmt.Printf("%d round end - ", i+1)
-		fmt.Printf("account:%s", address.String())
+		fmt.Printf("sender account:%s", sender.String())
+		fmt.Printf("receiver account:%s", receiver)
 		fmt.Printf(" Tx %d send!! ", txnum)
 		elapsedTime := time.Since(startTime)
 		fmt.Printf("TIME: %s\n", elapsedTime)
@@ -137,13 +134,13 @@ func accountinfo(addr sdk.AccAddress) (uint64, uint64) {
 	return acc.Sequence, acc.AccountNumber
 }
 
-func msgcreationbot(msgnum int, address sdk.AccAddress, tokenA string, tokenB string, swapamount int64) []sdk.Msg {
-	consensusState, height, _, err := channelutils.QueryLatestConsensusState(clientCtx, srcPort, srcChannel)
+func msgcreationbot(msgnum int, srcPort string, srcChannel string, coin sdk.Coin, sender sdk.AccAddress, receiver string) []sdk.Msg {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	consensusState, height, _, err := channelutils.QueryLatestConsensusState(ctx, srcPort, srcChannel)
 	if err != nil {
-
-		
+		println(err)
 	}
-
 	var timeoutHeight clienttypes.Height
 	var timeoutTimestamp uint64
 
@@ -155,24 +152,11 @@ func msgcreationbot(msgnum int, address sdk.AccAddress, tokenA string, tokenB st
 	timeoutTimestamp = consensusState.GetTimestamp() + timeoutTimestamp
 
 	var msgs []sdk.Msg
-	var orderpirce sdk.Dec
-
-	swapcoin := types.NewInt64Coin(tokenA, swapamount)
-	orderpirce = orderPirce(tokenA, tokenB)
 
 	for j := 0; j < msgnum; j++ {
-		var orderpirceX sdk.Dec
-		randtodec := sdk.NewDec(int64(rand.Intn(2)))
-		pricepercentvalue := orderpirce.Mul(randtodec.Quo(sdk.NewDec(100)))
-		if j%2 == 0 {
-			orderpirceX = orderpirce.Add(pricepercentvalue)
-		} else {
-			orderpirceX = orderpirce.Sub(pricepercentvalue)
-		}
-		ibcmsg := ibctypes.NewMsgTransfer()
-		msg := swaptypes.NewMsgSwapWithinBatch(address, uint64(1), uint32(1), swapcoin, tokenB, orderpirceX, sdk.NewDecWithPrec(3, 3))
+		msg := ibctypes.NewMsgTransfer(srcPort, srcChannel, coin, sender, receiver, timeoutHeight, timeoutTimestamp)
 		msgs = append(msgs, msg)
-		//println(orderpirceX.String())
+
 	}
 	return msgs
 }
@@ -185,48 +169,14 @@ func grpcclient() {
 	}
 }
 
-func orderPirce(tokenA string, tokenB string) sdk.Dec {
-	if grpcConn == nil {
-		grpcclient()
-	}
-	var pool swaptypes.Pool
-	liquClient := swaptypes.NewQueryClient(grpcConn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	PoolRes, err := liquClient.LiquidityPool(
-		ctx,
-		&swaptypes.QueryLiquidityPoolRequest{PoolId: 1},
-	)
-	if err != nil {
-		println(err)
-	}
-	pool = PoolRes.GetPool()
-
-	reserveCoins := sdk.NewCoins()
-	bankClient := banktypes.NewQueryClient(grpcConn)
-	for _, denom := range pool.ReserveCoinDenoms {
-		res, err := bankClient.Balance(ctx, banktypes.NewQueryBalanceRequest(pool.GetReserveAccount(), denom))
-		if err == nil && res.Balance.IsValid() {
-			reserveCoins = reserveCoins.Add(*res.Balance)
-		} else {
-			fmt.Println(err)
-		}
-	}
-
-	swapPrice := reserveCoins.AmountOf(tokenA).ToDec().Quo(reserveCoins.AmountOf(tokenB).ToDec())
-
-	println("swapPrice:", swapPrice.String())
-	return swapPrice
-}
-
 func main() {
 
-	var txnum int = 100 // 총 tx = txnum * 계정수
-	var msgnum int = 1  //1tx 당 msg수 /
-	var round int = 2   // 총실행횟수= txnum * round
-	var swapamount int64 = 1000
-	var tokenA string = "uatom"
-	var tokenB string = "uiris"
+	var txnum int = 1  // 총 tx = txnum * 계정수
+	var msgnum int = 1 //1tx 당 msg수 /
+	var round int = 1  // 총실행횟수= txnum * round
+	var srcPort string = ""
+	var srcChannel string = ""
+	coin, err := sdk.ParseCoinNormalized("1uatom")
 
 	if grpcConn == nil {
 		grpcclient()
@@ -245,7 +195,8 @@ func main() {
 	wait.Add(len(keylist))
 
 	for i, key := range keylist {
-
+		sender := key.GetAddress()
+		receiver := key.GetAddress()
 		accountarmor, err := keyring.ExportPrivKeyArmor(key.GetName(), "qwer1234")
 		if err != nil {
 			println(err)
@@ -255,9 +206,9 @@ func main() {
 			println(err)
 		}
 		if i%2 == 0 {
-			go signtxsend(round, txnum, msgnum, accountpriv, key.GetAddress(), wait, tokenA, tokenB, swapamount)
+			go signtxsend(round, txnum, msgnum, accountpriv, wait, srcPort, srcChannel, coin, sender, receiver.String())
 		} else {
-			go signtxsend(round, txnum, msgnum, accountpriv, key.GetAddress(), wait, tokenB, tokenA, swapamount)
+			go signtxsend(round, txnum, msgnum, accountpriv, wait, srcPort, srcChannel, coin, sender, receiver.String())
 		}
 	}
 
